@@ -52,27 +52,11 @@ public class DruidCoordinatorCleanupPendingSegments implements DruidCoordinatorH
     final List<DateTime> createdTimes = new ArrayList<>();
     createdTimes.add(
         indexingServiceClient
-            .getRunningTasks()
+            .getActiveTasks()
             .stream()
             .map(TaskStatusPlus::getCreatedTime)
             .min(Comparators.naturalNullsFirst())
-            .orElse(DateTimes.nowUtc()) // If there is no running tasks, this returns the current time.
-    );
-    createdTimes.add(
-        indexingServiceClient
-            .getPendingTasks()
-            .stream()
-            .map(TaskStatusPlus::getCreatedTime)
-            .min(Comparators.naturalNullsFirst())
-            .orElse(DateTimes.nowUtc()) // If there is no pending tasks, this returns the current time.
-    );
-    createdTimes.add(
-        indexingServiceClient
-            .getWaitingTasks()
-            .stream()
-            .map(TaskStatusPlus::getCreatedTime)
-            .min(Comparators.naturalNullsFirst())
-            .orElse(DateTimes.nowUtc()) // If there is no waiting tasks, this returns the current time.
+            .orElse(DateTimes.nowUtc()) // If there are no active tasks, this returns the current time.
     );
 
     final TaskStatusPlus completeTaskStatus = indexingServiceClient.getLastCompleteTask();
@@ -89,7 +73,7 @@ public class DruidCoordinatorCleanupPendingSegments implements DruidCoordinatorH
     // (DateTimes.nowUtc() - KEEP_PENDING_SEGMENTS_OFFSET).
     final DateTime pendingSegmentsCleanupEndTime = createdTimes.get(0).minus(KEEP_PENDING_SEGMENTS_OFFSET);
     for (String dataSource : params.getDataSources().keySet()) {
-      if (!params.getCoordinatorDynamicConfig().getKillPendingSegmentsSkipList().contains(dataSource)) {
+      if (!params.getCoordinatorDynamicConfig().getProtectedPendingSegmentDatasources().contains(dataSource)) {
         log.info(
             "Killed [%d] pendingSegments created until [%s] for dataSource[%s]",
             indexingServiceClient.killPendingSegments(dataSource, pendingSegmentsCleanupEndTime),

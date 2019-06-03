@@ -19,8 +19,6 @@
 
 package org.apache.druid.server.http;
 
-import com.fasterxml.jackson.core.JsonFactory;
-import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.base.Function;
 import com.google.common.collect.Collections2;
@@ -38,6 +36,8 @@ import org.apache.druid.server.security.AuthorizationUtils;
 import org.apache.druid.server.security.AuthorizerMapper;
 import org.apache.druid.server.security.ResourceAction;
 import org.apache.druid.timeline.DataSegment;
+import org.apache.druid.timeline.SegmentId;
+import org.apache.druid.timeline.SegmentWithOvershadowedStatus;
 import org.joda.time.Interval;
 
 import javax.servlet.http.HttpServletRequest;
@@ -50,10 +50,11 @@ import javax.ws.rs.QueryParam;
 import javax.ws.rs.core.Context;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
-import javax.ws.rs.core.StreamingOutput;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.stream.Stream;
@@ -65,9 +66,7 @@ public class MetadataResource
 {
   private final MetadataSegmentManager metadataSegmentManager;
   private final IndexerMetadataStorageCoordinator metadataStorageCoordinator;
-  private final AuthConfig authConfig;
   private final AuthorizerMapper authorizerMapper;
-  private final ObjectMapper jsonMapper;
 
   @Inject
   public MetadataResource(
@@ -80,9 +79,7 @@ public class MetadataResource
   {
     this.metadataSegmentManager = metadataSegmentManager;
     this.metadataStorageCoordinator = metadataStorageCoordinator;
-    this.authConfig = authConfig;
     this.authorizerMapper = authorizerMapper;
-    this.jsonMapper = jsonMapper;
   }
 
   @GET
@@ -94,10 +91,13 @@ public class MetadataResource
       @Context final HttpServletRequest req
   )
   {
-    final Collection<ImmutableDruidDataSource> druidDataSources = metadataSegmentManager.getInventory();
+    // If we haven't polled the metadata store yet, use an empty list of datasources.
+    final Collection<ImmutableDruidDataSource> druidDataSources = Optional.ofNullable(metadataSegmentManager.getDataSources())
+                                                                          .orElse(Collections.emptyList());
+
     final Set<String> dataSourceNamesPreAuth;
     if (includeDisabled != null) {
-      dataSourceNamesPreAuth = new TreeSet<>(metadataSegmentManager.getAllDatasourceNames());
+      dataSourceNamesPreAuth = new TreeSet<>(metadataSegmentManager.getAllDataSourceNames());
     } else {
       dataSourceNamesPreAuth = Sets.newTreeSet(
           Iterables.transform(druidDataSources, ImmutableDruidDataSource::getName)
@@ -134,11 +134,9 @@ public class MetadataResource
   @Path("/datasources/{dataSourceName}")
   @Produces(MediaType.APPLICATION_JSON)
   @ResourceFilters(DatasourceResourceFilter.class)
-  public Response getDatabaseSegmentDataSource(
-      @PathParam("dataSourceName") final String dataSourceName
-  )
+  public Response getDatabaseSegmentDataSource(@PathParam("dataSourceName") final String dataSourceName)
   {
-    ImmutableDruidDataSource dataSource = metadataSegmentManager.getInventoryValue(dataSourceName);
+    ImmutableDruidDataSource dataSource = metadataSegmentManager.getDataSource(dataSourceName);
     if (dataSource == null) {
       return Response.status(Response.Status.NOT_FOUND).build();
     }
@@ -149,33 +147,76 @@ public class MetadataResource
   @GET
   @Path("/segments")
   @Produces(MediaType.APPLICATION_JSON)
-  public Response getDatabaseSegments(@Context final HttpServletRequest req)
+  public Response getDatabaseSegments(
+      @Context final HttpServletRequest req,
+      @QueryParam("datasources") final Set<String> datasources,
+      @QueryParam("includeOvershadowedStatus") final String includeOvershadowedStatus
+  )
   {
-    final Collection<ImmutableDruidDataSource> druidDataSources = metadataSegmentManager.getInventory();
-    final Stream<DataSegment> metadataSegments = druidDataSources
-        .stream()
-        .flatMap(t -> t.getSegments().stream());
+    // If we haven't polled the metadata store yet, use an empty list of datasources.
+    Collection<ImmutableDruidDataSource> druidDataSources = Optional.ofNullable(metadataSegmentManager.getDataSources())
+                                                                    .orElse(Collections.emptyList());
+    Stream<ImmutableDruidDataSource> dataSourceStream = druidDataSources.stream();
+    if (datasources != null && !datasources.isEmpty()) {
+      dataSourceStream = dataSourceStream.filter(src -> datasources.contains(src.getName()));
+    }
+    final Stream<DataSegment> metadataSegments = dataSourceStream.flatMap(t -> t.getSegments().stream());
 
-    Function<DataSegment, Iterable<ResourceAction>> raGenerator = segment -> Collections.singletonList(
-        AuthorizationUtils.DATASOURCE_READ_RA_GENERATOR.apply(segment.getDataSource()));
+    if (includeOvershadowedStatus != null) {
+      final Iterable<SegmentWithOvershadowedStatus> authorizedSegments = findAuthorizedSegmentWithOvershadowedStatus(
+          req,
+          druidDataSources,
+          metadataSegments
+      );
+      Response.ResponseBuilder builder = Response.status(Response.Status.OK);
+      return builder.entity(authorizedSegments).build();
+    } else {
 
-    final Iterable<DataSegment> authorizedSegments =
-        AuthorizationUtils.filterAuthorizedResources(req, metadataSegments::iterator, raGenerator, authorizerMapper);
+      final Function<DataSegment, Iterable<ResourceAction>> raGenerator = segment -> Collections.singletonList(
+          AuthorizationUtils.DATASOURCE_READ_RA_GENERATOR.apply(segment.getDataSource()));
 
-    final StreamingOutput stream = outputStream -> {
-      final JsonFactory jsonFactory = jsonMapper.getFactory();
-      try (final JsonGenerator jsonGenerator = jsonFactory.createGenerator(outputStream)) {
-        jsonGenerator.writeStartArray();
-        for (DataSegment ds : authorizedSegments) {
-          jsonGenerator.writeObject(ds);
-          jsonGenerator.flush();
-        }
-        jsonGenerator.writeEndArray();
-      }
-    };
+      final Iterable<DataSegment> authorizedSegments = AuthorizationUtils.filterAuthorizedResources(
+          req,
+          metadataSegments::iterator,
+          raGenerator,
+          authorizerMapper
+      );
 
-    Response.ResponseBuilder builder = Response.status(Response.Status.OK);
-    return builder.entity(stream).build();
+      Response.ResponseBuilder builder = Response.status(Response.Status.OK);
+      return builder.entity(authorizedSegments).build();
+    }
+  }
+
+  private Iterable<SegmentWithOvershadowedStatus> findAuthorizedSegmentWithOvershadowedStatus(
+      HttpServletRequest req,
+      Collection<ImmutableDruidDataSource> druidDataSources,
+      Stream<DataSegment> metadataSegments
+  )
+  {
+    // It's fine to add all overshadowed segments to a single collection because only
+    // a small fraction of the segments in the cluster are expected to be overshadowed,
+    // so building this collection shouldn't generate a lot of garbage.
+    final Set<DataSegment> overshadowedSegments = new HashSet<>();
+    for (ImmutableDruidDataSource dataSource : druidDataSources) {
+      overshadowedSegments.addAll(ImmutableDruidDataSource.determineOvershadowedSegments(dataSource.getSegments()));
+    }
+
+    final Stream<SegmentWithOvershadowedStatus> segmentsWithOvershadowedStatus = metadataSegments
+        .map(segment -> new SegmentWithOvershadowedStatus(
+            segment,
+            overshadowedSegments.contains(segment)
+        ));
+
+    final Function<SegmentWithOvershadowedStatus, Iterable<ResourceAction>> raGenerator = segment -> Collections
+        .singletonList(AuthorizationUtils.DATASOURCE_READ_RA_GENERATOR.apply(segment.getDataSegment().getDataSource()));
+
+    final Iterable<SegmentWithOvershadowedStatus> authorizedSegments = AuthorizationUtils.filterAuthorizedResources(
+        req,
+        segmentsWithOvershadowedStatus::iterator,
+        raGenerator,
+        authorizerMapper
+    );
+    return authorizedSegments;
   }
 
   @GET
@@ -187,7 +228,7 @@ public class MetadataResource
       @QueryParam("full") String full
   )
   {
-    ImmutableDruidDataSource dataSource = metadataSegmentManager.getInventoryValue(dataSourceName);
+    ImmutableDruidDataSource dataSource = metadataSegmentManager.getDataSource(dataSourceName);
     if (dataSource == null) {
       return Response.status(Response.Status.NOT_FOUND).build();
     }
@@ -197,19 +238,7 @@ public class MetadataResource
       return builder.entity(dataSource.getSegments()).build();
     }
 
-    return builder.entity(
-        Iterables.transform(
-            dataSource.getSegments(),
-            new Function<DataSegment, String>()
-            {
-              @Override
-              public String apply(DataSegment segment)
-              {
-                return segment.getIdentifier();
-              }
-            }
-        )
-    ).build();
+    return builder.entity(Collections2.transform(dataSource.getSegments(), DataSegment::getId)).build();
   }
 
   @POST
@@ -229,7 +258,7 @@ public class MetadataResource
       return builder.entity(segments).build();
     }
 
-    return builder.entity(Iterables.transform(segments, DataSegment::getIdentifier)).build();
+    return builder.entity(Collections2.transform(segments, DataSegment::getId)).build();
   }
 
   @GET
@@ -241,13 +270,14 @@ public class MetadataResource
       @PathParam("segmentId") String segmentId
   )
   {
-    ImmutableDruidDataSource dataSource = metadataSegmentManager.getInventoryValue(dataSourceName);
+    ImmutableDruidDataSource dataSource = metadataSegmentManager.getDataSource(dataSourceName);
     if (dataSource == null) {
       return Response.status(Response.Status.NOT_FOUND).build();
     }
 
-    for (DataSegment segment : dataSource.getSegments()) {
-      if (segment.getIdentifier().equalsIgnoreCase(segmentId)) {
+    for (SegmentId possibleSegmentId : SegmentId.iteratePossibleParsingsWithDataSource(dataSourceName, segmentId)) {
+      DataSegment segment = dataSource.getSegment(possibleSegmentId);
+      if (segment != null) {
         return Response.status(Response.Status.OK).entity(segment).build();
       }
     }

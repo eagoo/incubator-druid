@@ -20,6 +20,7 @@
 package org.apache.druid.client.selector;
 
 import it.unimi.dsi.fastutil.ints.Int2ObjectRBTreeMap;
+import org.apache.druid.client.DataSegmentInterner;
 import org.apache.druid.server.coordination.DruidServerMetadata;
 import org.apache.druid.server.coordination.ServerType;
 import org.apache.druid.timeline.DataSegment;
@@ -50,7 +51,7 @@ public class ServerSelector implements DiscoverySelector<QueryableDruidServer>
       TierSelectorStrategy strategy
   )
   {
-    this.segment = new AtomicReference<>(segment);
+    this.segment = new AtomicReference<>(DataSegmentInterner.intern(segment));
     this.strategy = strategy;
     this.historicalServers = new Int2ObjectRBTreeMap<>(strategy.getComparator());
     this.realtimeServers = new Int2ObjectRBTreeMap<>(strategy.getComparator());
@@ -126,7 +127,7 @@ public class ServerSelector implements DiscoverySelector<QueryableDruidServer>
             .map(server -> server.getServer().getMetadata())
             .forEach(candidates::add);
 
-        if (candidates.size() < numCandidates) {
+        if (candidates.size() < numCandidates) { //-V6007: false alarm due to a bug in PVS-Studio
           strategy.pick(realtimeServers, segment.get(), numCandidates - candidates.size())
               .stream()
               .map(server -> server.getServer().getMetadata())

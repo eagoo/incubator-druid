@@ -21,7 +21,6 @@ package org.apache.druid.sql.calcite.rel;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.google.common.base.Preconditions;
-import org.apache.calcite.interpreter.BindableConvention;
 import org.apache.calcite.plan.Convention;
 import org.apache.calcite.plan.RelOptCluster;
 import org.apache.calcite.plan.RelOptCost;
@@ -111,19 +110,6 @@ public class DruidQueryRel extends DruidRel<DruidQueryRel>
   }
 
   @Override
-  public DruidQueryRel asBindable()
-  {
-    return new DruidQueryRel(
-        getCluster(),
-        getTraitSet().plus(BindableConvention.INSTANCE),
-        table,
-        druidTable,
-        getQueryMaker(),
-        partialQuery
-    );
-  }
-
-  @Override
   public DruidQueryRel asDruidConvention()
   {
     return new DruidQueryRel(
@@ -137,7 +123,7 @@ public class DruidQueryRel extends DruidRel<DruidQueryRel>
   }
 
   @Override
-  public List<String> getDatasourceNames()
+  public List<String> getDataSourceNames()
   {
     return druidTable.getDataSource().getNames();
   }

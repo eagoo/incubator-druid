@@ -36,9 +36,8 @@ import java.util.stream.Collectors;
 
 /**
  */
-public class Rows
+public final class Rows
 {
-
   /**
    * @param timeStamp rollup up timestamp to be used to create group key
    * @param inputRow  input row
@@ -67,13 +66,17 @@ public class Rows
     } else if (inputValue instanceof List) {
       // guava's toString function fails on null objects, so please do not use it
       return ((List<?>) inputValue).stream().map(String::valueOf).collect(Collectors.toList());
+    } else if (inputValue instanceof byte[]) {
+      // convert byte[] to base64 encoded string
+      return Collections.singletonList(StringUtils.encodeBase64String((byte[]) inputValue));
     } else {
       return Collections.singletonList(String.valueOf(inputValue));
     }
   }
 
   /**
-   * Convert an object to a number. Nulls are treated as zeroes.
+   * Convert an object to a number. Nulls are treated as zeroes unless
+   * druid.generic.useDefaultValueForNull is set to false.
    *
    * @param name       field name of the object being converted (may be used for exception messages)
    * @param inputValue the actual object being converted
@@ -122,5 +125,9 @@ public class Rows
       }
     }
     return metricValueString;
+  }
+
+  private Rows()
+  {
   }
 }

@@ -66,6 +66,7 @@ import org.apache.druid.segment.column.ColumnConfig;
 import org.apache.druid.segment.incremental.IncrementalIndex;
 import org.apache.druid.segment.serde.ComplexMetrics;
 import org.apache.druid.segment.writeout.OffHeapMemorySegmentWriteOutMediumFactory;
+import org.apache.druid.timeline.SegmentId;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
 import org.openjdk.jmh.annotations.Fork;
@@ -232,8 +233,7 @@ public class SelectBenchmark
     factory = new SelectQueryRunnerFactory(
         new SelectQueryQueryToolChest(
             JSON_MAPPER,
-            QueryBenchmarkUtil.NoopIntervalChunkingQueryRunnerDecorator(),
-            selectConfigSupplier
+            QueryBenchmarkUtil.noopIntervalChunkingQueryRunnerDecorator()
         ),
         new SelectQueryEngine(),
         QueryBenchmarkUtil.NOOP_QUERYWATCHER
@@ -268,8 +268,10 @@ public class SelectBenchmark
     return queryResult.toList();
   }
 
-  // don't run this benchmark with a query that doesn't use QueryGranularities.ALL,
-  // this pagination function probably doesn't work correctly in that case.
+  /**
+   * Don't run this benchmark with a query that doesn't use {@link Granularities#ALL},
+   * this pagination function probably doesn't work correctly in that case.
+   */
   private SelectQuery incrementQueryPagination(SelectQuery query, SelectResultValue prevResult)
   {
     Map<String, Integer> pagingIdentifiers = prevResult.getPagingIdentifiers();
@@ -290,7 +292,7 @@ public class SelectBenchmark
   {
     SelectQuery queryCopy = query.withPagingSpec(PagingSpec.newSpec(pagingThreshold));
 
-    String segmentId = "incIndex";
+    SegmentId segmentId = SegmentId.dummy("incIndex");
     QueryRunner<Row> runner = QueryBenchmarkUtil.makeQueryRunner(
         factory,
         segmentId,
@@ -312,7 +314,6 @@ public class SelectBenchmark
     }
   }
 
-
   @Benchmark
   @BenchmarkMode(Mode.AverageTime)
   @OutputTimeUnit(TimeUnit.MICROSECONDS)
@@ -320,11 +321,11 @@ public class SelectBenchmark
   {
     SelectQuery queryCopy = query.withPagingSpec(PagingSpec.newSpec(pagingThreshold));
 
-    String segmentId = "qIndex";
+    SegmentId segmentId = SegmentId.dummy("qIndex");
     QueryRunner<Result<SelectResultValue>> runner = QueryBenchmarkUtil.makeQueryRunner(
         factory,
         segmentId,
-        new QueryableIndexSegment(segmentId, qIndexes.get(0))
+        new QueryableIndexSegment(qIndexes.get(0), segmentId)
     );
 
     boolean done = false;
@@ -334,9 +335,7 @@ public class SelectBenchmark
       if (result.getEvents().size() == 0) {
         done = true;
       } else {
-        for (EventHolder eh : result.getEvents()) {
-          blackhole.consume(eh);
-        }
+        blackhole.consume(result);
         queryCopy = incrementQueryPagination(queryCopy, result);
       }
     }
@@ -350,15 +349,14 @@ public class SelectBenchmark
   {
     SelectQuery queryCopy = query.withPagingSpec(PagingSpec.newSpec(pagingThreshold));
 
-    String segmentName;
     List<QueryRunner<Result<SelectResultValue>>> singleSegmentRunners = new ArrayList<>();
     QueryToolChest toolChest = factory.getToolchest();
     for (int i = 0; i < numSegments; i++) {
-      segmentName = "qIndex" + i;
+      SegmentId segmentId = SegmentId.dummy("qIndex" + i);
       QueryRunner<Result<SelectResultValue>> runner = QueryBenchmarkUtil.makeQueryRunner(
           factory,
-          segmentName,
-          new QueryableIndexSegment(segmentName, qIndexes.get(i))
+          segmentId,
+          new QueryableIndexSegment(qIndexes.get(i), segmentId)
       );
       singleSegmentRunners.add(toolChest.preMergeQueryDecoration(runner));
     }
@@ -381,9 +379,7 @@ public class SelectBenchmark
       if (result.getEvents().size() == 0) {
         done = true;
       } else {
-        for (EventHolder eh : result.getEvents()) {
-          blackhole.consume(eh);
-        }
+        blackhole.consume(result);
         queryCopy = incrementQueryPagination(queryCopy, result);
       }
     }

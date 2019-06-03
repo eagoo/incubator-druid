@@ -114,7 +114,7 @@ public class DetermineHashedPartitionsJobTest
                 0,
                 1,
                 first,
-                new PeriodGranularity(new Period("P1D"), null, DateTimes.inferTzfromString("America/Los_Angeles"))
+                new PeriodGranularity(new Period("P1D"), null, DateTimes.inferTzFromString("America/Los_Angeles"))
             }
         }
     );
@@ -211,6 +211,7 @@ public class DetermineHashedPartitionsJobTest
             null,
             false,
             false,
+            null,
             null,
             null,
             null

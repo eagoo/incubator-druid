@@ -20,7 +20,6 @@
 package org.apache.druid.query.aggregation.datasketches.hll;
 
 import org.apache.druid.data.input.Row;
-import org.apache.druid.initialization.DruidModule;
 import org.apache.druid.java.util.common.granularity.Granularities;
 import org.apache.druid.java.util.common.guava.Sequence;
 import org.apache.druid.query.aggregation.AggregationTestHelper;
@@ -48,10 +47,9 @@ public class HllSketchAggregatorTest
 
   public HllSketchAggregatorTest(GroupByQueryConfig config)
   {
-    DruidModule module = new HllSketchModule();
-    module.configure(null);
+    HllSketchModule.registerSerde();
     helper = AggregationTestHelper.createGroupByQueryAggregationTestHelper(
-        module.getJacksonModules(), config, tempFolder);
+        new HllSketchModule().getJacksonModules(), config, tempFolder);
   }
 
   @Parameterized.Parameters(name = "{0}")
@@ -76,11 +74,12 @@ public class HllSketchAggregatorTest
             "    \"format\": \"tsv\",",
             "    \"timestampSpec\": {\"column\": \"timestamp\", \"format\": \"yyyyMMdd\"},",
             "    \"dimensionsSpec\": {",
-            "      \"dimensions\": [\"dim\"],",
+            "      \"dimensions\": [\"dim\", \"multiDim\"],",
             "      \"dimensionExclusions\": [],",
             "      \"spatialDimensions\": []",
             "    },",
-            "    \"columns\": [\"timestamp\", \"dim\", \"sketch\"]",
+            "    \"columns\": [\"timestamp\", \"dim\", \"multiDim\", \"sketch\"],",
+            "    \"listDelimiter\": \",\"",
             "  }",
             "}"),
         String.join("\n",
@@ -123,7 +122,8 @@ public class HllSketchAggregatorTest
             "      \"dimensionExclusions\": [],",
             "      \"spatialDimensions\": []",
             "    },",
-            "    \"columns\": [\"timestamp\", \"dim\", \"id\"]",
+            "    \"columns\": [\"timestamp\", \"dim\", \"multiDim\", \"id\"],",
+                    "    \"listDelimiter\": \",\"",
             "  }",
             "}"),
         String.join("\n",
@@ -162,11 +162,12 @@ public class HllSketchAggregatorTest
             "    \"format\": \"tsv\",",
             "    \"timestampSpec\": {\"column\": \"timestamp\", \"format\": \"yyyyMMdd\"},",
             "    \"dimensionsSpec\": {",
-            "      \"dimensions\": [\"dim\", \"id\"],",
+            "      \"dimensions\": [\"dim\", \"multiDim\", \"id\"],",
             "      \"dimensionExclusions\": [],",
             "      \"spatialDimensions\": []",
             "    },",
-            "    \"columns\": [\"timestamp\", \"dim\", \"id\"]",
+            "    \"columns\": [\"timestamp\", \"dim\", \"multiDim\", \"id\"],",
+            "    \"listDelimiter\": \",\"",
             "  }",
             "}"),
         "[]",
@@ -190,4 +191,44 @@ public class HllSketchAggregatorTest
     Assert.assertEquals(200, (double) row.getMetric("sketch"), 0.1);
   }
 
+  @Test
+  public void buildSketchesAtQueryTimeMultiValue() throws Exception
+  {
+    Sequence<Row> seq = helper.createIndexAndRunQueryOnSegment(
+        new File(this.getClass().getClassLoader().getResource("hll/hll_raw.tsv").getFile()),
+        String.join("\n",
+                    "{",
+                    "  \"type\": \"string\",",
+                    "  \"parseSpec\": {",
+                    "    \"format\": \"tsv\",",
+                    "    \"timestampSpec\": {\"column\": \"timestamp\", \"format\": \"yyyyMMdd\"},",
+                    "    \"dimensionsSpec\": {",
+                    "      \"dimensions\": [\"dim\", \"multiDim\", \"id\"],",
+                    "      \"dimensionExclusions\": [],",
+                    "      \"spatialDimensions\": []",
+                    "    },",
+                    "    \"columns\": [\"timestamp\", \"dim\", \"multiDim\", \"id\"],",
+                    "    \"listDelimiter\": \",\"",
+                    "  }",
+                    "}"),
+        "[]",
+        0, // minTimestamp
+        Granularities.NONE,
+        200, // maxRowCount
+        String.join("\n",
+                    "{",
+                    "  \"queryType\": \"groupBy\",",
+                    "  \"dataSource\": \"test_datasource\",",
+                    "  \"granularity\": \"ALL\",",
+                    "  \"dimensions\": [],",
+                    "  \"aggregations\": [",
+                    "    {\"type\": \"HLLSketchBuild\", \"name\": \"sketch\", \"fieldName\": \"multiDim\"}",
+                    "  ],",
+                    "  \"intervals\": [\"2017-01-01T00:00:00.000Z/2017-01-31T00:00:00.000Z\"]",
+                    "}"));
+    List<Row> results = seq.toList();
+    Assert.assertEquals(1, results.size());
+    Row row = results.get(0);
+    Assert.assertEquals(14, (double) row.getMetric("sketch"), 0.1);
+  }
 }

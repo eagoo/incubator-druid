@@ -48,7 +48,7 @@ There are several main parts to a segment metadata query:
 
 |property|description|required?|
 |--------|-----------|---------|
-|queryType|This String should always be "segmentMetadata"; this is the first thing Druid looks at to figure out how to interpret the query|yes|
+|queryType|This String should always be "segmentMetadata"; this is the first thing Apache Druid (incubating) looks at to figure out how to interpret the query|yes|
 |dataSource|A String or Object defining the data source to query, very similar to a table in a relational database. See [DataSource](../querying/datasource.html) for more information.|yes|
 |intervals|A JSON Object representing ISO-8601 Intervals. This defines the time ranges to run the query over.|no|
 |toInclude|A JSON Object representing what columns should be included in the result. Defaults to "all".|no|
@@ -93,7 +93,7 @@ Only columns which are dimensions (ie, have type `STRING`) will have any cardina
 
 If an interval is not specified, the query will use a default interval that spans a configurable period before the end time of the most recent segment.
 
-The length of this default time period is set in the broker configuration via:
+The length of this default time period is set in the Broker configuration via:
   druid.query.segmentMetadata.defaultHistory
 
 ### toInclude
@@ -130,7 +130,7 @@ This is a list of properties that determines the amount of information returned 
 
 By default, the "cardinality", "interval", and "minmax" types will be used. If a property is not needed, omitting it from this list will result in a more efficient query.
 
-The default analysis types can be set in the broker configuration via:
+The default analysis types can be set in the Broker configuration via:
   `druid.query.segmentMetadata.defaultAnalysisTypes`
 
 Types of column analyses are described below:

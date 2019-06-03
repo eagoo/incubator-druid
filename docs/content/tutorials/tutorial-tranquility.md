@@ -26,12 +26,12 @@ title: "Tutorial: Load streaming data with HTTP push"
 
 ## Getting started
 
-This tutorial shows you how to load streaming data into Druid using HTTP push via Tranquility Server.
+This tutorial shows you how to load streaming data into Apache Druid (incubating) using HTTP push via Tranquility Server.
 
 [Tranquility Server](https://github.com/druid-io/tranquility/blob/master/docs/server.md) allows a stream of data to be pushed into Druid using HTTP POSTs.
 
 For this tutorial, we'll assume you've already downloaded Druid as described in
-the [single-machine quickstart](quickstart.html) and have it running on your local machine. You
+the [single-machine quickstart](index.html) and have it running on your local machine. You
 don't need to have loaded any data yet.
 
 ## Download Tranquility
@@ -39,22 +39,22 @@ don't need to have loaded any data yet.
 In the Druid package root, run the following commands:
 
 ```bash
-curl http://static.druid.io/tranquility/releases/tranquility-distribution-0.8.2.tgz -o tranquility-distribution-0.8.2.tgz
-tar -xzf tranquility-distribution-0.8.2.tgz
-mv tranquility-distribution-0.8.2 tranquility
+curl http://static.druid.io/tranquility/releases/tranquility-distribution-0.8.3.tgz -o tranquility-distribution-0.8.3.tgz
+tar -xzf tranquility-distribution-0.8.3.tgz
+mv tranquility-distribution-0.8.3 tranquility
 ```
 
 The startup scripts for the tutorial will expect the contents of the Tranquility tarball to be located at `tranquility` under the apache-druid-#{DRUIDVERSION} package root.
 
 ## Enable Tranquility Server
 
-- In your `quickstart/tutorial/conf/tutorial-cluster.conf`, uncomment the `tranquility-server` line.
-- Stop your *bin/supervise* command (CTRL-C) and then restart it by again running `bin/supervise -c quickstart/tutorial/conf/tutorial-cluster.conf`.
+- In your `conf/supervise/single-server/micro-quickstart.conf`, uncomment the `tranquility-server` line.
+- Stop your *bin/supervise* command (CTRL-C) and then restart it by again running `bin/supervise -c conf/supervise/single-server/micro-quickstart.conf`.
 
 As part of the output of *supervise* you should see something like:
 
 ```bash
-Running command[tranquility-server], logging to[/stage/apache-druid-#{DRUIDVERSION}/var/sv/tranquility-server.log]: tranquility/bin/tranquility server -configFile quickstart/tutorial/conf/tranquility/server.json -Ddruid.extensions.loadList=[]
+Running command[tranquility-server], logging to[/stage/apache-druid-#{DRUIDVERSION}/var/sv/tranquility-server.log]: tranquility/bin/tranquility server -configFile conf/tranquility/server.json -Ddruid.extensions.loadList=[]
 ```
 
 You can check the log file in `var/sv/tranquility-server.log` to confirm that the server is starting up properly.
@@ -96,7 +96,7 @@ Please follow the [query tutorial](../tutorials/tutorial-query.html) to run some
 
 If you wish to go through any of the other ingestion tutorials, you will need to shut down the cluster and reset the cluster state by removing the contents of the `var` directory under the druid package, as the other tutorials will write to the same "wikipedia" datasource.
 
-When cleaning up after running this Tranquility tutorial, it is also necessary to recomment the `tranquility-server` line in `quickstart/tutorial/conf/tutorial-cluster.conf` before restarting the cluster.
+When cleaning up after running this Tranquility tutorial, it is also necessary to recomment the `tranquility-server` line in `conf/supervise/single-server/micro-quickstart.conf` before restarting the cluster.
 
 
 ## Further reading

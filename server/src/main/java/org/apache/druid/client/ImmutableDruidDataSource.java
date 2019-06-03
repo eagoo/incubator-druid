@@ -25,30 +25,40 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSortedMap;
+import com.google.common.collect.Ordering;
 import org.apache.druid.timeline.DataSegment;
+import org.apache.druid.timeline.SegmentId;
+import org.apache.druid.timeline.VersionedIntervalTimeline;
 
 import java.util.Collection;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Objects;
-import java.util.SortedMap;
+import java.util.Set;
 
 /**
+ * An immutable collection of metadata of segments ({@link DataSegment} objects), belonging to a particular data source.
+ *
+ * @see DruidDataSource - a mutable counterpart of this class
  */
 public class ImmutableDruidDataSource
 {
   private final String name;
   private final ImmutableMap<String, String> properties;
-  private final ImmutableSortedMap<String, DataSegment> idToSegments;
+  private final ImmutableSortedMap<SegmentId, DataSegment> idToSegments;
+  private final long totalSizeOfSegments;
 
-  public ImmutableDruidDataSource(
-      String name,
-      Map<String, String> properties,
-      SortedMap<String, DataSegment> idToSegments
-  )
+  /**
+   * Concurrency: idToSegments argument might be a {@link java.util.concurrent.ConcurrentMap} that is being updated
+   * concurrently while this constructor is executed.
+   */
+  public ImmutableDruidDataSource(String name, Map<String, String> properties, Map<SegmentId, DataSegment> idToSegments)
   {
     this.name = Preconditions.checkNotNull(name);
     this.properties = ImmutableMap.copyOf(properties);
-    this.idToSegments = ImmutableSortedMap.copyOfSorted(idToSegments);
+    this.idToSegments = ImmutableSortedMap.copyOf(idToSegments);
+    this.totalSizeOfSegments = idToSegments.values().stream().mapToLong(DataSegment::getSize).sum();
   }
 
   @JsonCreator
@@ -60,9 +70,15 @@ public class ImmutableDruidDataSource
   {
     this.name = Preconditions.checkNotNull(name);
     this.properties = ImmutableMap.copyOf(properties);
-    final ImmutableSortedMap.Builder<String, DataSegment> builder = ImmutableSortedMap.naturalOrder();
-    segments.forEach(segment -> builder.put(segment.getIdentifier(), segment));
-    this.idToSegments = builder.build();
+
+    final ImmutableSortedMap.Builder<SegmentId, DataSegment> idToSegmentsBuilder = ImmutableSortedMap.naturalOrder();
+    long totalSizeOfSegments = 0;
+    for (DataSegment segment : segments) {
+      idToSegmentsBuilder.put(segment.getId(), segment);
+      totalSizeOfSegments += segment.getSize();
+    }
+    this.idToSegments = idToSegmentsBuilder.build();
+    this.totalSizeOfSegments = totalSizeOfSegments;
   }
 
   @JsonProperty
@@ -84,9 +100,53 @@ public class ImmutableDruidDataSource
   }
 
   @JsonIgnore
-  public DataSegment getSegment(String segmentIdentifier)
+  public DataSegment getSegment(SegmentId segmentId)
   {
-    return idToSegments.get(segmentIdentifier);
+    return idToSegments.get(segmentId);
+  }
+
+  /**
+   * Returns the sum of the {@link DataSegment#getSize() sizes} of all segments in this ImmutableDruidDataSource.
+   */
+  @JsonIgnore
+  public long getTotalSizeOfSegments()
+  {
+    return totalSizeOfSegments;
+  }
+
+  /**
+   * This method finds the overshadowed segments from the given segments
+   *
+   * @return set of overshadowed segments
+   */
+  public static Set<DataSegment> determineOvershadowedSegments(Iterable<DataSegment> segments)
+  {
+    final Map<String, VersionedIntervalTimeline<String, DataSegment>> timelines = buildTimelines(segments);
+
+    final Set<DataSegment> overshadowedSegments = new HashSet<>();
+    for (DataSegment dataSegment : segments) {
+      final VersionedIntervalTimeline<String, DataSegment> timeline = timelines.get(dataSegment.getDataSource());
+      if (timeline != null && timeline.isOvershadowed(dataSegment.getInterval(), dataSegment.getVersion())) {
+        overshadowedSegments.add(dataSegment);
+      }
+    }
+    return overshadowedSegments;
+  }
+
+  /**
+   * Builds a timeline from given segments
+   *
+   * @return map of datasource to VersionedIntervalTimeline of segments
+   */
+  private static Map<String, VersionedIntervalTimeline<String, DataSegment>> buildTimelines(
+      Iterable<DataSegment> segments
+  )
+  {
+    final Map<String, VersionedIntervalTimeline<String, DataSegment>> timelines = new HashMap<>();
+    segments.forEach(segment -> timelines
+        .computeIfAbsent(segment.getDataSource(), dataSource -> new VersionedIntervalTimeline<>(Ordering.natural()))
+        .add(segment.getInterval(), segment.getVersion(), segment.getShardSpec().createChunk(segment)));
+    return timelines;
   }
 
   @Override

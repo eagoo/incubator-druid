@@ -31,7 +31,6 @@ import org.apache.druid.indexing.overlord.SegmentPublishResult;
 import org.apache.druid.java.util.emitter.service.ServiceMetricEvent;
 import org.apache.druid.query.DruidMetrics;
 import org.apache.druid.timeline.DataSegment;
-import org.apache.druid.timeline.DataSegmentUtils;
 
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -118,7 +117,12 @@ public class SegmentTransactionalInsertAction implements TaskAction<SegmentPubli
                       endMetadata
                   )
               )
-              .onInvalidLocks(SegmentPublishResult::fail)
+              .onInvalidLocks(
+                  () -> SegmentPublishResult.fail(
+                      "Invalid task locks. Maybe they are revoked by a higher priority task."
+                      + " Please check the overlord log for details."
+                  )
+              )
               .build()
       );
     }
@@ -154,8 +158,8 @@ public class SegmentTransactionalInsertAction implements TaskAction<SegmentPubli
   @Override
   public String toString()
   {
-    return "SegmentInsertAction{" +
-           "segments=" + DataSegmentUtils.getIdentifiersString(segments) +
+    return "SegmentTransactionalInsertAction{" +
+           "segments=" + segments +
            ", startMetadata=" + startMetadata +
            ", endMetadata=" + endMetadata +
            '}';

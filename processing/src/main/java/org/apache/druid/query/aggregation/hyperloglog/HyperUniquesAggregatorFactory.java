@@ -21,7 +21,6 @@ package org.apache.druid.query.aggregation.hyperloglog;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import org.apache.commons.codec.binary.Base64;
 import org.apache.druid.hll.HyperLogLogCollector;
 import org.apache.druid.java.util.common.IAE;
 import org.apache.druid.java.util.common.StringUtils;
@@ -40,6 +39,7 @@ import org.apache.druid.segment.BaseObjectColumnValueSelector;
 import org.apache.druid.segment.ColumnSelectorFactory;
 import org.apache.druid.segment.NilColumnValueSelector;
 
+import javax.annotation.Nullable;
 import java.nio.ByteBuffer;
 import java.util.Collections;
 import java.util.Comparator;
@@ -50,7 +50,7 @@ import java.util.Objects;
  */
 public class HyperUniquesAggregatorFactory extends AggregatorFactory
 {
-  public static Object estimateCardinality(Object object, boolean round)
+  public static Object estimateCardinality(@Nullable Object object, boolean round)
   {
     if (object == null) {
       return 0;
@@ -185,7 +185,7 @@ public class HyperUniquesAggregatorFactory extends AggregatorFactory
       // Be conservative, don't assume we own this buffer.
       buffer = ((ByteBuffer) object).duplicate();
     } else if (object instanceof String) {
-      buffer = ByteBuffer.wrap(Base64.decodeBase64(StringUtils.toUtf8((String) object)));
+      buffer = ByteBuffer.wrap(StringUtils.decodeBase64(StringUtils.toUtf8((String) object)));
     } else {
       return object;
     }
@@ -193,8 +193,9 @@ public class HyperUniquesAggregatorFactory extends AggregatorFactory
     return HyperLogLogCollector.makeCollector(buffer);
   }
 
+  @Nullable
   @Override
-  public Object finalizeComputation(Object object)
+  public Object finalizeComputation(@Nullable Object object)
   {
     return estimateCardinality(object, round);
   }

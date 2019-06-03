@@ -37,13 +37,12 @@ import java.util.Objects;
 
 /**
  * Base class for both build and merge factories
- * @author Alexander Saydakov
  */
-abstract class HllSketchAggregatorFactory extends AggregatorFactory
+public abstract class HllSketchAggregatorFactory extends AggregatorFactory
 {
 
-  static final int DEFAULT_LG_K = 12;
-  static final TgtHllType DEFAULT_TGT_HLL_TYPE = TgtHllType.HLL_4;
+  public static final int DEFAULT_LG_K = 12;
+  public static final TgtHllType DEFAULT_TGT_HLL_TYPE = TgtHllType.HLL_4;
 
   static final Comparator<HllSketch> COMPARATOR =
       Comparator.nullsFirst(Comparator.comparingDouble(HllSketch::getEstimate));
@@ -158,9 +157,13 @@ abstract class HllSketchAggregatorFactory extends AggregatorFactory
     };
   }
 
+  @Nullable
   @Override
-  public Double finalizeComputation(final Object object)
+  public Double finalizeComputation(@Nullable final Object object)
   {
+    if (object == null) {
+      return null;
+    }
     final HllSketch sketch = (HllSketch) object;
     return sketch.getEstimate();
   }

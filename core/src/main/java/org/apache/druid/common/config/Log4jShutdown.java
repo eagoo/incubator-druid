@@ -19,7 +19,6 @@
 
 package org.apache.druid.common.config;
 
-import com.google.common.base.Throwables;
 import org.apache.druid.java.util.common.ISE;
 import org.apache.logging.log4j.core.LifeCycle;
 import org.apache.logging.log4j.core.util.Cancellable;
@@ -159,7 +158,9 @@ public class Log4jShutdown implements ShutdownCallbackRegistry, LifeCycle
     private synchronized boolean compareAndSet(State expected, State transition)
     {
       if (current == expected) {
-        return transition(transition);
+        current = transition;
+        notifyAll();
+        return true;
       }
       return false;
     }
@@ -184,17 +185,10 @@ public class Log4jShutdown implements ShutdownCallbackRegistry, LifeCycle
           }
         }
         catch (InterruptedException e) {
-          throw Throwables.propagate(e);
+          throw new RuntimeException(e);
         }
       }
       return current;
-    }
-
-    private synchronized boolean transition(State transition)
-    {
-      current = transition;
-      notifyAll();
-      return true;
     }
 
     private synchronized State get()

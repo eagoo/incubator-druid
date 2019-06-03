@@ -26,7 +26,7 @@ title: "Task Locking & Priority"
 
 ## Locking
 
-Once an overlord node accepts a task, the task acquires locks for the data source and intervals specified in the task.
+Once an Overlord process accepts a task, the task acquires locks for the data source and intervals specified in the task.
 
 There are two lock types, i.e., _shared lock_ and _exclusive lock_.
 
@@ -43,7 +43,7 @@ Tasks are also part of a "task group", which is a set of tasks that can share in
 
 ## Priority
 
-Druid's indexing tasks use locks for atomic data ingestion. Each lock is acquired for the combination of a dataSource and an interval. Once a task acquires a lock, it can write data for the dataSource and the interval of the acquired lock unless the lock is released or preempted. Please see [the below Locking section](#locking)
+Apache Druid (incubating)'s indexing tasks use locks for atomic data ingestion. Each lock is acquired for the combination of a dataSource and an interval. Once a task acquires a lock, it can write data for the dataSource and the interval of the acquired lock unless the lock is released or preempted. Please see [the below Locking section](#locking)
 
 Each task has a priority which is used for lock acquisition. The locks of higher-priority tasks can preempt the locks of lower-priority tasks if they try to acquire for the same dataSource and interval. If some locks of a task are preempted, the behavior of the preempted task depends on the task implementation. Usually, most tasks finish as failed if they are preempted.
 
@@ -75,5 +75,5 @@ The task context is used for various task configuration parameters. The followin
 
 <div class="note caution">
 When a task acquires a lock, it sends a request via HTTP and awaits until it receives a response containing the lock acquisition result.
-As a result, an HTTP timeout error can occur if `taskLockTimeout` is greater than `druid.server.http.maxIdleTime` of overlords.
+As a result, an HTTP timeout error can occur if `taskLockTimeout` is greater than `druid.server.http.maxIdleTime` of Overlords.
 </div>

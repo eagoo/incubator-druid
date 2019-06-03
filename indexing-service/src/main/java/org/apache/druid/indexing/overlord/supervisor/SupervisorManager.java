@@ -21,7 +21,6 @@ package org.apache.druid.indexing.overlord.supervisor;
 
 import com.google.common.base.Optional;
 import com.google.common.base.Preconditions;
-import com.google.common.base.Throwables;
 import com.google.inject.Inject;
 import org.apache.druid.indexing.overlord.DataSourceMetadata;
 import org.apache.druid.java.util.common.Pair;
@@ -184,6 +183,12 @@ public class SupervisorManager
     return supervisor == null ? Optional.absent() : Optional.fromNullable(supervisor.lhs.getStats());
   }
 
+  public Optional<Boolean> isSupervisorHealthy(String id)
+  {
+    Pair<Supervisor, SupervisorSpec> supervisor = supervisors.get(id);
+    return supervisor == null ? Optional.absent() : Optional.fromNullable(supervisor.lhs.isHealthy());
+  }
+
   public boolean resetSupervisor(String id, @Nullable DataSourceMetadata dataSourceMetadata)
   {
     Preconditions.checkState(started, "SupervisorManager not started");
@@ -241,7 +246,10 @@ public class SupervisorManager
     }
 
     if (writeTombstone) {
-      metadataSupervisorManager.insert(id, new NoopSupervisorSpec(null, pair.rhs.getDataSources())); // where NoopSupervisorSpec is a tombstone
+      metadataSupervisorManager.insert(
+          id,
+          new NoopSupervisorSpec(null, pair.rhs.getDataSources())
+      ); // where NoopSupervisorSpec is a tombstone
     }
     pair.lhs.stop(true);
     supervisors.remove(id);
@@ -299,7 +307,7 @@ public class SupervisorManager
       if (persistSpec) {
         metadataSupervisorManager.insert(id, new NoopSupervisorSpec(null, spec.getDataSources()));
       }
-      throw Throwables.propagate(e);
+      throw new RuntimeException(e);
     }
 
     supervisors.put(id, Pair.of(supervisor, spec));

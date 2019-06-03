@@ -36,11 +36,13 @@ import com.google.common.util.concurrent.ListeningExecutorService;
 import com.google.common.util.concurrent.MoreExecutors;
 import org.apache.druid.data.input.Committer;
 import org.apache.druid.data.input.InputRow;
+import org.apache.druid.indexing.overlord.SegmentPublishResult;
 import org.apache.druid.java.util.common.ISE;
 import org.apache.druid.java.util.common.concurrent.Execs;
 import org.apache.druid.java.util.common.logger.Logger;
 import org.apache.druid.segment.loading.DataSegmentKiller;
 import org.apache.druid.segment.realtime.appenderator.SegmentWithState.SegmentState;
+import org.apache.druid.timeline.DataSegment;
 import org.joda.time.DateTime;
 import org.joda.time.Interval;
 
@@ -78,7 +80,7 @@ import java.util.stream.Stream;
 public abstract class BaseAppenderatorDriver implements Closeable
 {
   /**
-   * Segments allocated for an intervval.
+   * Segments allocated for an interval.
    * There should be at most a single active (appending) segment at any time.
    */
   static class SegmentsOfInterval
@@ -192,13 +194,13 @@ public abstract class BaseAppenderatorDriver implements Closeable
       this.lastSegmentId = lastSegmentId;
     }
 
-    void add(SegmentIdentifier identifier)
+    void add(SegmentIdWithShardSpec identifier)
     {
       intervalToSegmentStates.computeIfAbsent(
           identifier.getInterval().getStartMillis(),
           k -> new SegmentsOfInterval(identifier.getInterval())
       ).setAppendingSegment(SegmentWithState.newSegment(identifier));
-      lastSegmentId = identifier.getIdentifierAsString();
+      lastSegmentId = identifier.toString();
     }
 
     Entry<Long, SegmentsOfInterval> floor(long timestamp)
@@ -274,7 +276,7 @@ public abstract class BaseAppenderatorDriver implements Closeable
   /**
    * Find a segment in the {@link SegmentState#APPENDING} state for the given timestamp and sequenceName.
    */
-  private SegmentIdentifier getAppendableSegment(final DateTime timestamp, final String sequenceName)
+  private SegmentIdWithShardSpec getAppendableSegment(final DateTime timestamp, final String sequenceName)
   {
     synchronized (segments) {
       final SegmentsForSequence segmentsForSequence = segments.get(sequenceName);
@@ -314,7 +316,7 @@ public abstract class BaseAppenderatorDriver implements Closeable
    *
    * @throws IOException if an exception occurs while allocating a segment
    */
-  private SegmentIdentifier getSegment(
+  private SegmentIdWithShardSpec getSegment(
       final InputRow row,
       final String sequenceName,
       final boolean skipSegmentLineageCheck
@@ -322,13 +324,13 @@ public abstract class BaseAppenderatorDriver implements Closeable
   {
     synchronized (segments) {
       final DateTime timestamp = row.getTimestamp();
-      final SegmentIdentifier existing = getAppendableSegment(timestamp, sequenceName);
+      final SegmentIdWithShardSpec existing = getAppendableSegment(timestamp, sequenceName);
       if (existing != null) {
         return existing;
       } else {
         // Allocate new segment.
         final SegmentsForSequence segmentsForSequence = segments.get(sequenceName);
-        final SegmentIdentifier newSegment = segmentAllocator.allocate(
+        final SegmentIdWithShardSpec newSegment = segmentAllocator.allocate(
             row,
             sequenceName,
             segmentsForSequence == null ? null : segmentsForSequence.lastSegmentId,
@@ -339,7 +341,7 @@ public abstract class BaseAppenderatorDriver implements Closeable
         );
 
         if (newSegment != null) {
-          for (SegmentIdentifier identifier : appenderator.getSegments()) {
+          for (SegmentIdWithShardSpec identifier : appenderator.getSegments()) {
             if (identifier.equals(newSegment)) {
               throw new ISE(
                   "WTF?! Allocated segment[%s] which conflicts with existing segment[%s].",
@@ -361,7 +363,7 @@ public abstract class BaseAppenderatorDriver implements Closeable
     }
   }
 
-  private void addSegment(String sequenceName, SegmentIdentifier identifier)
+  private void addSegment(String sequenceName, SegmentIdWithShardSpec identifier)
   {
     synchronized (segments) {
       segments.computeIfAbsent(sequenceName, k -> new SegmentsForSequence())
@@ -396,7 +398,7 @@ public abstract class BaseAppenderatorDriver implements Closeable
     Preconditions.checkNotNull(row, "row");
     Preconditions.checkNotNull(sequenceName, "sequenceName");
 
-    final SegmentIdentifier identifier = getSegment(row, sequenceName, skipSegmentLineageCheck);
+    final SegmentIdWithShardSpec identifier = getSegment(row, sequenceName, skipSegmentLineageCheck);
 
     if (identifier != null) {
       try {
@@ -461,7 +463,7 @@ public abstract class BaseAppenderatorDriver implements Closeable
    */
   ListenableFuture<SegmentsAndMetadata> pushInBackground(
       @Nullable final WrappedCommitter wrappedCommitter,
-      final Collection<SegmentIdentifier> segmentIdentifiers,
+      final Collection<SegmentIdWithShardSpec> segmentIdentifiers,
       final boolean useUniquePath
   )
   {
@@ -471,9 +473,10 @@ public abstract class BaseAppenderatorDriver implements Closeable
         appenderator.push(segmentIdentifiers, wrappedCommitter, useUniquePath),
         (Function<SegmentsAndMetadata, SegmentsAndMetadata>) segmentsAndMetadata -> {
           // Sanity check
-          final Set<SegmentIdentifier> pushedSegments = segmentsAndMetadata.getSegments().stream()
-                                                                           .map(SegmentIdentifier::fromDataSegment)
-                                                                           .collect(Collectors.toSet());
+          final Set<SegmentIdWithShardSpec> pushedSegments = segmentsAndMetadata.getSegments().stream()
+                                                                                .map(
+                                                                                    SegmentIdWithShardSpec::fromDataSegment)
+                                                                                .collect(Collectors.toSet());
           if (!pushedSegments.equals(Sets.newHashSet(segmentIdentifiers))) {
             log.warn(
                 "Removing segments from deep storage because sanity check failed: %s", segmentsAndMetadata.getSegments()
@@ -509,7 +512,7 @@ public abstract class BaseAppenderatorDriver implements Closeable
         segmentsAndMetadata
             .getSegments()
             .stream()
-            .map(segment -> appenderator.drop(SegmentIdentifier.fromDataSegment(segment)))
+            .map(segment -> appenderator.drop(SegmentIdWithShardSpec.fromDataSegment(segment)))
             .collect(Collectors.toList())
     );
 
@@ -552,37 +555,62 @@ public abstract class BaseAppenderatorDriver implements Closeable
 
             try {
               final Object metadata = segmentsAndMetadata.getCommitMetadata();
-              final boolean published = publisher.publishSegments(
-                  ImmutableSet.copyOf(segmentsAndMetadata.getSegments()),
+              final ImmutableSet<DataSegment> ourSegments = ImmutableSet.copyOf(segmentsAndMetadata.getSegments());
+              final SegmentPublishResult publishResult = publisher.publishSegments(
+                  ourSegments,
                   metadata == null ? null : ((AppenderatorDriverMetadata) metadata).getCallerMetadata()
-              ).isSuccess();
+              );
 
-              if (published) {
+              if (publishResult.isSuccess()) {
                 log.info("Published segments.");
               } else {
-                log.info("Transaction failure while publishing segments, removing them from deep storage "
-                         + "and checking if someone else beat us to publishing.");
+                // Publishing didn't affirmatively succeed. However, segments with our identifiers may still be active
+                // now after all, for two possible reasons:
+                //
+                // 1) A replica may have beat us to publishing these segments. In this case we want to delete the
+                //    segments we pushed (if they had unique paths) to avoid wasting space on deep storage.
+                // 2) We may have actually succeeded, but not realized it due to missing the confirmation response
+                //    from the overlord. In this case we do not want to delete the segments we pushed, since they are
+                //    now live!
 
-                segmentsAndMetadata.getSegments().forEach(dataSegmentKiller::killQuietly);
-
-                final Set<SegmentIdentifier> segmentsIdentifiers = segmentsAndMetadata
+                final Set<SegmentIdWithShardSpec> segmentsIdentifiers = segmentsAndMetadata
                     .getSegments()
                     .stream()
-                    .map(SegmentIdentifier::fromDataSegment)
+                    .map(SegmentIdWithShardSpec::fromDataSegment)
                     .collect(Collectors.toSet());
 
-                if (usedSegmentChecker.findUsedSegments(segmentsIdentifiers)
-                                      .equals(Sets.newHashSet(segmentsAndMetadata.getSegments()))) {
-                  log.info("Our segments really do exist, awaiting handoff.");
+                final Set<DataSegment> activeSegments = usedSegmentChecker.findUsedSegments(segmentsIdentifiers);
+
+                if (activeSegments.equals(ourSegments)) {
+                  log.info("Could not publish segments, but checked and found them already published. Continuing.");
+
+                  // Clean up pushed segments if they are physically disjoint from the published ones (this means
+                  // they were probably pushed by a replica, and with the unique paths option).
+                  final boolean physicallyDisjoint = Sets.intersection(
+                      activeSegments.stream().map(DataSegment::getLoadSpec).collect(Collectors.toSet()),
+                      ourSegments.stream().map(DataSegment::getLoadSpec).collect(Collectors.toSet())
+                  ).isEmpty();
+
+                  if (physicallyDisjoint) {
+                    segmentsAndMetadata.getSegments().forEach(dataSegmentKiller::killQuietly);
+                  }
                 } else {
-                  throw new ISE("Failed to publish segments.");
+                  // Our segments aren't active. Publish failed for some reason. Clean them up and then throw an error.
+                  segmentsAndMetadata.getSegments().forEach(dataSegmentKiller::killQuietly);
+
+                  if (publishResult.getErrorMsg() != null) {
+                    throw new ISE("Failed to publish segments because of [%s].", publishResult.getErrorMsg());
+                  } else {
+                    throw new ISE("Failed to publish segments.");
+                  }
                 }
               }
             }
             catch (Exception e) {
               // Must not remove segments here, we aren't sure if our transaction succeeded or not.
               log.warn(e, "Failed publish, not removing segments: %s", segmentsAndMetadata.getSegments());
-              throw Throwables.propagate(e);
+              Throwables.propagateIfPossible(e);
+              throw new RuntimeException(e);
             }
           }
 
@@ -594,6 +622,7 @@ public abstract class BaseAppenderatorDriver implements Closeable
   /**
    * Clears out all our state and also calls {@link Appenderator#clear()} on the underlying Appenderator.
    */
+  @VisibleForTesting
   public void clear() throws InterruptedException
   {
     synchronized (segments) {

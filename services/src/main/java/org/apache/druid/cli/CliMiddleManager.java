@@ -56,6 +56,7 @@ import org.apache.druid.indexing.worker.config.WorkerConfig;
 import org.apache.druid.indexing.worker.http.TaskManagementResource;
 import org.apache.druid.indexing.worker.http.WorkerResource;
 import org.apache.druid.java.util.common.logger.Logger;
+import org.apache.druid.query.lookup.LookupSerdeModule;
 import org.apache.druid.segment.realtime.firehose.ChatHandlerProvider;
 import org.apache.druid.server.DruidNode;
 import org.apache.druid.server.initialization.jetty.JettyServerInitializer;
@@ -64,6 +65,7 @@ import org.eclipse.jetty.server.Server;
 import java.util.List;
 
 /**
+ *
  */
 @Command(
     name = "middleManager",
@@ -100,7 +102,7 @@ public class CliMiddleManager extends ServerRunnable
             binder.bind(ForkingTaskRunner.class).in(LazySingleton.class);
 
             binder.bind(IndexingServiceClient.class).toProvider(Providers.of(null));
-            binder.bind(new TypeLiteral<IndexTaskClientFactory<ParallelIndexTaskClient>>(){})
+            binder.bind(new TypeLiteral<IndexTaskClientFactory<ParallelIndexTaskClient>>() {})
                   .toProvider(Providers.of(null));
             binder.bind(ChatHandlerProvider.class).toProvider(Providers.of(null));
             PolyBind.createChoice(
@@ -130,13 +132,12 @@ public class CliMiddleManager extends ServerRunnable
 
             LifecycleModule.register(binder, Server.class);
 
-            binder
-                .bind(DiscoverySideEffectsProvider.Child.class)
-                .toProvider(
-                    new DiscoverySideEffectsProvider(NodeType.MIDDLE_MANAGER, ImmutableList.of(WorkerNodeService.class))
-                )
-                .in(LazySingleton.class);
-            LifecycleModule.registerKey(binder, Key.get(DiscoverySideEffectsProvider.Child.class));
+            bindAnnouncer(
+                binder,
+                DiscoverySideEffectsProvider.builder(NodeType.MIDDLE_MANAGER)
+                                            .serviceClasses(ImmutableList.of(WorkerNodeService.class))
+                                            .build()
+            );
           }
 
           @Provides
@@ -164,7 +165,8 @@ public class CliMiddleManager extends ServerRunnable
           }
         },
         new IndexingServiceFirehoseModule(),
-        new IndexingServiceTaskLogsModule()
+        new IndexingServiceTaskLogsModule(),
+        new LookupSerdeModule()
     );
   }
 }

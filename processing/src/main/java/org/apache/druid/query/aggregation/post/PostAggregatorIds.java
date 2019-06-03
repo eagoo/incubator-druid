@@ -45,4 +45,11 @@ public class PostAggregatorIds
   public static final byte ZTEST = 21;
   public static final byte PVALUE_FROM_ZTEST = 22;
   public static final byte THETA_SKETCH_CONSTANT = 23;
+  public static final byte MOMENTS_SKETCH_TO_QUANTILES_CACHE_TYPE_ID = 24;
+  public static final byte MOMENTS_SKETCH_TO_MIN_CACHE_TYPE_ID = 25;
+  public static final byte MOMENTS_SKETCH_TO_MAX_CACHE_TYPE_ID = 26;
+
+  // Datasketches Quantiles sketch aggregator (part 2)
+  public static final byte QUANTILES_DOUBLES_SKETCH_TO_RANK_CACHE_TYPE_ID = 27;
+  public static final byte QUANTILES_DOUBLES_SKETCH_TO_CDF_CACHE_TYPE_ID = 28;
 }

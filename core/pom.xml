@@ -31,7 +31,7 @@
   <parent>
     <artifactId>druid</artifactId>
     <groupId>org.apache.druid</groupId>
-    <version>0.13.0-incubating-SNAPSHOT</version>
+    <version>0.16.0-incubating-SNAPSHOT</version>
   </parent>
 
   <properties>
@@ -77,6 +77,10 @@
     <dependency>
       <groupId>javax.el</groupId>
       <artifactId>javax.el-api</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>javax.xml.bind</groupId>
+      <artifactId>jaxb-api</artifactId>
     </dependency>
     <dependency>
       <groupId>com.google.guava</groupId>

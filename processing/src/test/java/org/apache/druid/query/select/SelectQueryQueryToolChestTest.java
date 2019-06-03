@@ -38,8 +38,7 @@ public class SelectQueryQueryToolChestTest
 
   private static final SelectQueryQueryToolChest toolChest = new SelectQueryQueryToolChest(
       new DefaultObjectMapper(),
-      QueryRunnerTestHelper.NoopIntervalChunkingQueryRunnerDecorator(),
-      configSupplier
+      QueryRunnerTestHelper.noopIntervalChunkingQueryRunnerDecorator()
   );
 
   @Test
@@ -48,7 +47,7 @@ public class SelectQueryQueryToolChestTest
     final SelectQuery query1 = Druids.newSelectQueryBuilder()
                                      .dataSource("dummy")
                                      .dimensions(Collections.singletonList("testDim"))
-                                     .intervals(SelectQueryRunnerTest.I_0112_0114)
+                                     .intervals(SelectQueryRunnerTest.I_0112_0114_SPEC)
                                      .granularity(QueryRunnerTestHelper.allGran)
                                      .pagingSpec(PagingSpec.newSpec(3))
                                      .descending(false)
@@ -57,7 +56,7 @@ public class SelectQueryQueryToolChestTest
     final SelectQuery query2 = Druids.newSelectQueryBuilder()
                                      .dataSource("dummy")
                                      .dimensions(Collections.singletonList("testDim"))
-                                     .intervals(SelectQueryRunnerTest.I_0112_0114)
+                                     .intervals(SelectQueryRunnerTest.I_0112_0114_SPEC)
                                      .granularity(QueryRunnerTestHelper.allGran)
                                      .pagingSpec(PagingSpec.newSpec(3))
                                      .descending(true)
